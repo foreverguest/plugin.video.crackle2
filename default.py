@@ -98,11 +98,14 @@ def CountryCode():
     url = API_URL + 'geo/country?format=json'
     data = cache.cacheFunction(getURL, url)
     ret = {}
+    CCode = ''
     if data:
         djson = json.loads(data['html'])
-        ret['CCode'] = djson['CountryCode']
-    else:
+        CCode = djson['CountryCode']
+    if CCode not in {'US', 'us', 'UK', 'uk', 'AU', 'au', 'CA', 'ca'}:
         ret['CCode'] = 'US'
+    else:
+        ret['CCode'] = CCode
     return ret
 
 # Remove HTML codes

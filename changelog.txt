@@ -1,3 +1,6 @@
+[B]Version 0.0.3[/B]
+  - Return country code as 'US' if crackle is not available in that country.
+
 [B]Version 0.0.2[/B]
   - Get country code from api.
   - Use Cachefunction
