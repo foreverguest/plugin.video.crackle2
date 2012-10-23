@@ -102,7 +102,7 @@ def CountryCode():
     if data:
         djson = json.loads(data['html'])
         CCode = djson['CountryCode']
-    if CCode not in {'US', 'us', 'UK', 'uk', 'AU', 'au', 'CA', 'ca'}:
+    if CCode not in ['US', 'us', 'UK', 'uk', 'AU', 'au', 'CA', 'ca']:
         ret['CCode'] = 'US'
     else:
         ret['CCode'] = CCode
