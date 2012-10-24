@@ -159,6 +159,8 @@ def BuildMainDirectory():
         Url = str(slide['appDataID'])
         #print Url
         Image = slide['MobileImage']
+        if Image == '':
+            Image = slide['SlideImage_421x316']
         Genre = slide['ParentChannelName']
         if not Genre:
             Genre = ''
