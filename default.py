@@ -10,6 +10,11 @@ if rootDir[-1] == ';':
     rootDir = rootDir[0:-1]
 rootDir = xbmc.translatePath(rootDir)
 
+import SubtitleControl
+SC = SubtitleControl.SubtitleControl(__settings__.getAddonInfo('path'))
+
+path_pattern = re.compile('http:\\/\\/.+?\/(.+?)_[a-zA-Z0-9]+')
+
 programs_thumb = os.path.join(__settings__.getAddonInfo('path'), 'resources', 'media', 'programs.png')
 topics_thumb = os.path.join(__settings__.getAddonInfo('path'), 'resources', 'media', 'topics.png')
 search_thumb = os.path.join(__settings__.getAddonInfo('path'), 'resources', 'media', 'search.png')
@@ -24,7 +29,7 @@ cache = StorageServer.StorageServer(AddonId)
 ########################################################
 ## URLs
 ########################################################
-API_URL = 'http://api.crackle.com/Service.svc/'
+API_URL = 'http://%s.crackle.com/Service.svc/'
 MOVIES = '/movies/all/%s/50?format=json'
 SHOWS = '/shows/all/%s/50?format=json'
 FEATURED = 'featured'
@@ -37,8 +42,8 @@ HOMESLIDE = 'slideShow/home/%s?format=json'
 ORIGINALS = 'originals'
 COLLECTIONS = 'collections'
 CHURL = 'channel/%s/folders/%s?format=json'
-BASE_MEDIA_URL = 'http://media-us-am.crackle.com/%s_'
-DETAILS_URL = 'http://api.crackle.com/Service.svc/details/media/%s/%s?format=json'
+BASE_MEDIA_URL = 'http://media-%s-am.crackle.com/%s_'
+DETAILS_URL = 'http://%s.crackle.com/Service.svc/details/media/%s/%s?format=json'
 
 ########################################################
 ## Modes
@@ -95,17 +100,31 @@ def TestURL(url):
         return False
     
 def CountryCode():
-    url = API_URL + 'geo/country?format=json'
+    url = 'http://api.crackle.com/Service.svc/geo/country?format=json'
     data = cache.cacheFunction(getURL, url)
     ret = {}
     CCode = ''
     if data:
         djson = json.loads(data['html'])
-        CCode = djson['CountryCode']
-    if CCode not in ['US', 'us', 'UK', 'uk', 'AU', 'au', 'CA', 'ca']:
-        ret['CCode'] = 'US'
-    else:
-        ret['CCode'] = CCode
+        CCode = djson['CountryCode'].lower()
+
+    if CCode in ['us','uk','au','ca']:
+        ret['api'] = 'api'
+        ret['lang'] = 'us'
+    elif CCode == 'br': # brazil
+        ret['api'] = 'api-br'
+        ret['lang'] = 'br'
+    elif CCode in ['cr','ar','uy','cl','py','pa','pe','ve','ec','co','bo','mx']: # spanish latin america
+        ret['api'] = 'api-es'
+        ret['lang'] = 'es'
+
+    #if CCode not in ['US', 'us', 'UK', 'uk', 'AU', 'au', 'CA', 'ca','BR','br']:
+    #    ret['CCode'] = 'US'
+    #else:
+    #    ret['CCode'] = CCode
+
+    ret['CCode'] = CCode
+
     return ret
 
 # Remove HTML codes
@@ -140,12 +159,13 @@ def BuildMainDirectory():
     Mode = M_DO_NOTHING
     Title = __settings__.getLocalizedString(30011)
     Thumb = ''
-    Mediaitem.Url = sys.argv[0] + "?url=" + urllib.quote_plus(Url) + "&mode=" + str(Mode) + "&name=" + urllib.quote_plus(Title)
+    Mediaitem.Url = sys.argv[0] + "?url=" + urllib.quote_plus(Url) + "&mode=" + str(Mode) + "&name=" + urllib.quote_plus(Title.encode('utf8'))
     Mediaitem.ListItem.setThumbnailImage(Thumb)
     Mediaitem.ListItem.setLabel(Title)
     MediaItems.append(Mediaitem)
     # Get featured homepage contents
-    URL = API_URL + HOMESLIDE % CountryCode()['CCode']
+    countryInfo = CountryCode()
+    URL = (API_URL + HOMESLIDE) % (countryInfo['api'],countryInfo['CCode'])
     data = cache.cacheFunction(getURL, URL)
     #data = load_local_json('featured.json')
     items = json.loads(data['html'])
@@ -172,10 +192,10 @@ def BuildMainDirectory():
         NextScreen = slide['appNextScreenType']
         if NextScreen == 'VideoDetail':
             Mediaitem.Mode = M_SINGLE_VIDEO
-            Url = DETAILS_URL % (Url, CountryCode()['CCode'])
+            Url = DETAILS_URL % (countryInfo['api'], Url, countryInfo['CCode'])
         else:
             Mediaitem.Mode = M_GET_VIDEO_LINKS
-            Url = API_URL + CHURL % (Url, CountryCode()['CCode'])
+            Url = (API_URL + CHURL) % (countryInfo['api'], Url, countryInfo['CCode'])
         #print 'Debug Msg 2'
         Mediaitem.Image = Image
         Title = Title.encode('utf-8')
@@ -203,7 +223,7 @@ def BuildMainDirectory():
         Mode = mode
         Title = name
         Thumb = thumbnailImage
-        Mediaitem.Url = sys.argv[0] + "?url=" + urllib.quote_plus(Url) + "&mode=" + str(Mode) + "&name=" + urllib.quote_plus(Title)
+        Mediaitem.Url = sys.argv[0] + "?url=" + urllib.quote_plus(Url) + "&mode=" + str(Mode) + "&name=" + urllib.quote_plus(Title.encode('utf8'))
         Mediaitem.ListItem.setThumbnailImage(Thumb)
         Mediaitem.ListItem.setLabel(Title)
         Mediaitem.Isfolder = True
@@ -223,6 +243,7 @@ def MoviesDirectory(mode):
     # set content type so library shows more views and info
     xbmcplugin.setContent(int(sys.argv[1]), 'movies')
     MediaItems = []
+    countryInfo = CountryCode()
     if mode == M_MOVIES:
         menuTitle = __settings__.getLocalizedString(30011)
         #fname = 'moviesf.json'
@@ -230,7 +251,7 @@ def MoviesDirectory(mode):
         (__settings__.getLocalizedString(30014), topics_thumb, str(M_MOVIES_POPULAR)),
         (__settings__.getLocalizedString(30016), topics_thumb, str(M_MOVIES_RECENT))
         ]
-        URL = API_URL + FEATURED + MOVIES % CountryCode()['CCode']
+        URL = (API_URL + FEATURED + MOVIES) % (countryInfo['api'],countryInfo['CCode'])
     elif mode == M_MOVIES_POPULAR:
         menuTitle = __settings__.getLocalizedString(30014)
         #fname = 'moviesp.json'
@@ -238,7 +259,7 @@ def MoviesDirectory(mode):
         (__settings__.getLocalizedString(30011), topics_thumb, str(M_MOVIES)),
         (__settings__.getLocalizedString(30016), topics_thumb, str(M_MOVIES_RECENT))
         ]
-        URL = API_URL + POPULAR + MOVIES % CountryCode()['CCode']
+        URL = (API_URL + POPULAR + MOVIES) % (countryInfo['api'],countryInfo['CCode'])
     elif mode == M_MOVIES_RECENT:
         menuTitle = __settings__.getLocalizedString(30016)
         #fname = 'moviesr.json'
@@ -246,7 +267,7 @@ def MoviesDirectory(mode):
         (__settings__.getLocalizedString(30011), topics_thumb, str(M_MOVIES)),
         (__settings__.getLocalizedString(30014), topics_thumb, str(M_MOVIES_POPULAR))
         ]
-        URL = API_URL + RECENT + MOVIES % CountryCode()['CCode']
+        URL = (API_URL + RECENT + MOVIES) % (countryInfo['api'],countryInfo['CCode'])
     menuMode = M_DO_NOTHING
     # Top Title
     Mediaitem = MediaItem()
@@ -254,7 +275,7 @@ def MoviesDirectory(mode):
     Mode = menuMode
     Title = menuTitle
     Thumb = ''
-    Mediaitem.Url = sys.argv[0] + "?url=" + urllib.quote_plus(Url) + "&mode=" + str(Mode) + "&name=" + urllib.quote_plus(Title)
+    Mediaitem.Url = sys.argv[0] + "?url=" + urllib.quote_plus(Url) + "&mode=" + str(Mode) + "&name=" + urllib.quote_plus(Title.encode('utf8'))
     Mediaitem.ListItem.setThumbnailImage(Thumb)
     Mediaitem.ListItem.setLabel(Title)
     MediaItems.append(Mediaitem)
@@ -268,7 +289,7 @@ def MoviesDirectory(mode):
     for item in items:
         Title = '* ' + item['Title']
         Url = str(item['ID'])
-        Url = API_URL + CHURL % (Url, CountryCode()['CCode'])
+        Url = (API_URL + CHURL) % (countryInfo['api'],Url,countryInfo['CCode'])
         Image = item['ImageUrl2']
         Genre = item['Genre']
         Plot = item['Description']
@@ -276,7 +297,8 @@ def MoviesDirectory(mode):
         Mediaitem = MediaItem()
         Mediaitem.Mode = M_GET_VIDEO_LINKS
         Mediaitem.Image = Image
-        Mediaitem.Url = sys.argv[0] + "?url=" + urllib.quote_plus(Url) + "&mode=" + str(Mediaitem.Mode) + "&name=" + urllib.quote_plus(Title)
+        #print "CRACKLE2 - "+repr(Url)+" - "+repr(Title.encode('utf8'))
+        Mediaitem.Url = sys.argv[0] + "?url=" + urllib.quote_plus(Url) + "&mode=" + str(Mediaitem.Mode) + "&name=" + urllib.quote_plus(Title.encode('utf8'))
         Mediaitem.ListItem.setInfo('video', { 'Title': Title, 'Plot': Plot, 'Mpaa': Mpaa,
                                              'Genre': Genre})
         Mediaitem.ListItem.setThumbnailImage(Mediaitem.Image)
@@ -290,7 +312,7 @@ def MoviesDirectory(mode):
         Mode = mode
         Title = name
         Thumb = thumbnailImage
-        Mediaitem.Url = sys.argv[0] + "?url=" + urllib.quote_plus(Url) + "&mode=" + str(Mode) + "&name=" + urllib.quote_plus(Title)
+        Mediaitem.Url = sys.argv[0] + "?url=" + urllib.quote_plus(Url) + "&mode=" + str(Mode) + "&name=" + urllib.quote_plus(Title.encode('utf8'))
         Mediaitem.ListItem.setThumbnailImage(Thumb)
         Mediaitem.ListItem.setLabel(Title)
         Mediaitem.Isfolder = True
@@ -308,7 +330,7 @@ def MoviesDirectory(mode):
         Mode = mode
         Title = name
         Thumb = thumbnailImage
-        Mediaitem.Url = sys.argv[0] + "?url=" + urllib.quote_plus(Url) + "&mode=" + str(Mode) + "&name=" + urllib.quote_plus(Title)
+        Mediaitem.Url = sys.argv[0] + "?url=" + urllib.quote_plus(Url) + "&mode=" + str(Mode) + "&name=" + urllib.quote_plus(Title.encode('utf8'))
         Mediaitem.ListItem.setThumbnailImage(Thumb)
         Mediaitem.ListItem.setLabel(Title)
         Mediaitem.Isfolder = True
@@ -328,6 +350,7 @@ def ShowsDirectory(mode):
     # set content type so library shows more views and info
     xbmcplugin.setContent(int(sys.argv[1]), 'movies')
     MediaItems = []
+    countryInfo = CountryCode()
     if mode == M_SHOWS:
         menuTitle = __settings__.getLocalizedString(30011)
         #fname = 'showsf.json'
@@ -335,7 +358,7 @@ def ShowsDirectory(mode):
         (__settings__.getLocalizedString(30014), topics_thumb, str(M_SHOWS_POPULAR)),
         (__settings__.getLocalizedString(30016), topics_thumb, str(M_SHOWS_RECENT))
         ]
-        URL = API_URL + FEATURED + SHOWS % CountryCode()['CCode']
+        URL = (API_URL + FEATURED + SHOWS) % (countryInfo['api'],countryInfo['CCode'])
     elif mode == M_SHOWS_POPULAR:
         menuTitle = __settings__.getLocalizedString(30014)
         #fname = 'showsp.json'
@@ -343,7 +366,7 @@ def ShowsDirectory(mode):
         (__settings__.getLocalizedString(30011), topics_thumb, str(M_SHOWS)),
         (__settings__.getLocalizedString(30016), topics_thumb, str(M_SHOWS_RECENT))
         ]
-        URL = API_URL + POPULAR + SHOWS % CountryCode()['CCode']
+        URL = (API_URL + POPULAR + SHOWS) % (countryInfo['api'],countryInfo['CCode'])
     elif mode == M_SHOWS_RECENT:
         menuTitle = __settings__.getLocalizedString(30016)
         #fname = 'showsr.json'
@@ -351,7 +374,7 @@ def ShowsDirectory(mode):
         (__settings__.getLocalizedString(30011), topics_thumb, str(M_SHOWS)),
         (__settings__.getLocalizedString(30014), topics_thumb, str(M_SHOWS_POPULAR))
         ]
-        URL = API_URL + RECENT + SHOWS % CountryCode()['CCode']
+        URL = (API_URL + RECENT + SHOWS) % (countryInfo['api'],countryInfo['CCode'])
     menuMode = M_DO_NOTHING
     # Top Title
     Mediaitem = MediaItem()
@@ -359,7 +382,7 @@ def ShowsDirectory(mode):
     Mode = menuMode
     Title = menuTitle
     Thumb = ''
-    Mediaitem.Url = sys.argv[0] + "?url=" + urllib.quote_plus(Url) + "&mode=" + str(Mode) + "&name=" + urllib.quote_plus(Title)
+    Mediaitem.Url = sys.argv[0] + "?url=" + urllib.quote_plus(Url) + "&mode=" + str(Mode) + "&name=" + urllib.quote_plus(Title.encode('utf8'))
     Mediaitem.ListItem.setThumbnailImage(Thumb)
     Mediaitem.ListItem.setLabel(Title)
     MediaItems.append(Mediaitem)
@@ -373,7 +396,7 @@ def ShowsDirectory(mode):
     for item in items:
         Title = '* ' + item['Title']
         Url = str(item['ID'])
-        Url = API_URL + CHURL % (Url, CountryCode()['CCode'])
+        Url = (API_URL + CHURL) % (countryInfo['api'],Url,countryInfo['CCode'])
         Image = item['ImageUrl10']
         Genre = item['Genre']
         Plot = item['Description']
@@ -381,7 +404,7 @@ def ShowsDirectory(mode):
         Mediaitem = MediaItem()
         Mediaitem.Mode = M_GET_VIDEO_LINKS
         Mediaitem.Image = Image
-        Mediaitem.Url = sys.argv[0] + "?url=" + urllib.quote_plus(Url) + "&mode=" + str(Mediaitem.Mode) + "&name=" + urllib.quote_plus(Title)
+        Mediaitem.Url = sys.argv[0] + "?url=" + urllib.quote_plus(Url) + "&mode=" + str(Mediaitem.Mode) + "&name=" + urllib.quote_plus(Title.encode('utf8'))
         Mediaitem.ListItem.setInfo('video', { 'Title': Title, 'Plot': Plot, 'Mpaa': Mpaa,
                                              'Genre': Genre})
         Mediaitem.ListItem.setThumbnailImage(Mediaitem.Image)
@@ -395,7 +418,7 @@ def ShowsDirectory(mode):
         Mode = mode
         Title = name
         Thumb = thumbnailImage
-        Mediaitem.Url = sys.argv[0] + "?url=" + urllib.quote_plus(Url) + "&mode=" + str(Mode) + "&name=" + urllib.quote_plus(Title)
+        Mediaitem.Url = sys.argv[0] + "?url=" + urllib.quote_plus(Url) + "&mode=" + str(Mode) + "&name=" + urllib.quote_plus(Title.encode('utf8'))
         Mediaitem.ListItem.setThumbnailImage(Thumb)
         Mediaitem.ListItem.setLabel(Title)
         Mediaitem.Isfolder = True
@@ -413,7 +436,7 @@ def ShowsDirectory(mode):
         Mode = mode
         Title = name
         Thumb = thumbnailImage
-        Mediaitem.Url = sys.argv[0] + "?url=" + urllib.quote_plus(Url) + "&mode=" + str(Mode) + "&name=" + urllib.quote_plus(Title)
+        Mediaitem.Url = sys.argv[0] + "?url=" + urllib.quote_plus(Url) + "&mode=" + str(Mode) + "&name=" + urllib.quote_plus(Title.encode('utf8'))
         Mediaitem.ListItem.setThumbnailImage(Thumb)
         Mediaitem.ListItem.setLabel(Title)
         Mediaitem.Isfolder = True
@@ -434,6 +457,7 @@ def BrowseDirectory(mode):
     # set content type so library shows more views and info
     xbmcplugin.setContent(int(sys.argv[1]), 'movies')
     MediaItems = []
+    countryInfo = CountryCode()
     if mode == M_BROWSE:
         menuTitle = __settings__.getLocalizedString(30012)
         #fname = 'browsem.json'
@@ -442,7 +466,7 @@ def BrowseDirectory(mode):
         (__settings__.getLocalizedString(30018), topics_thumb, str(M_BROWSE_ORIGINALS)),
         (__settings__.getLocalizedString(30019), topics_thumb, str(M_BROWSE_COLLECTIONS))
         ]
-        URL = API_URL + BROWSE % ('movies', CountryCode()['CCode'])
+        URL = (API_URL + BROWSE) % (countryInfo['api'] ,'movies', countryInfo['CCode'])
     elif mode == M_BROWSE_SHOWS:
         menuTitle = __settings__.getLocalizedString(30017)
         #fname = 'browset.json'
@@ -451,7 +475,7 @@ def BrowseDirectory(mode):
         (__settings__.getLocalizedString(30018), topics_thumb, str(M_BROWSE_ORIGINALS)),
         (__settings__.getLocalizedString(30019), topics_thumb, str(M_BROWSE_COLLECTIONS))
         ]
-        URL = API_URL + BROWSE % ('television', CountryCode()['CCode'])
+        URL = (API_URL + BROWSE) % (countryInfo['api'] ,'television', countryInfo['CCode'])
     elif mode == M_BROWSE_ORIGINALS:
         menuTitle = __settings__.getLocalizedString(30018)
         #fname = 'browseo.json'
@@ -460,7 +484,7 @@ def BrowseDirectory(mode):
         (__settings__.getLocalizedString(30017), topics_thumb, str(M_BROWSE_SHOWS)),
         (__settings__.getLocalizedString(30019), topics_thumb, str(M_BROWSE_COLLECTIONS))
         ]
-        URL = API_URL + BROWSE2 % ('originals', CountryCode()['CCode'])
+        URL = (API_URL + BROWSE2) % (countryInfo['api'] ,'originals', countryInfo['CCode'])
     elif mode == M_BROWSE_COLLECTIONS:
         menuTitle = __settings__.getLocalizedString(30019)
         #fname = 'browsec.json'
@@ -469,7 +493,7 @@ def BrowseDirectory(mode):
         (__settings__.getLocalizedString(30017), topics_thumb, str(M_BROWSE_SHOWS)),
         (__settings__.getLocalizedString(30018), topics_thumb, str(M_BROWSE_ORIGINALS))
         ]
-        URL = API_URL + BROWSE2 % ('collections', CountryCode()['CCode'])
+        URL = (API_URL + BROWSE2) % (countryInfo['api'] ,'collections', countryInfo['CCode'])
     menuMode = M_DO_NOTHING
     # Top Title
     Mediaitem = MediaItem()
@@ -477,7 +501,7 @@ def BrowseDirectory(mode):
     Mode = menuMode
     Title = menuTitle
     Thumb = ''
-    Mediaitem.Url = sys.argv[0] + "?url=" + urllib.quote_plus(Url) + "&mode=" + str(Mode) + "&name=" + urllib.quote_plus(Title)
+    Mediaitem.Url = sys.argv[0] + "?url=" + urllib.quote_plus(Url) + "&mode=" + str(Mode) + "&name=" + urllib.quote_plus(Title.encode('utf8'))
     Mediaitem.ListItem.setThumbnailImage(Thumb)
     Mediaitem.ListItem.setLabel(Title)
     MediaItems.append(Mediaitem)
@@ -494,7 +518,7 @@ def BrowseDirectory(mode):
         Title = '* ' + item['Name']
         #print Title
         Url = str(item['ID'])
-        Url = API_URL + CHURL % (Url, CountryCode()['CCode'])
+        Url = (API_URL + CHURL) % (countryInfo['api'] ,Url, countryInfo['CCode'])
         #print Url
         Image = item['ChannelArtTileLarge']
         Genre = item['Genre']
@@ -504,7 +528,7 @@ def BrowseDirectory(mode):
         Mediaitem = MediaItem()
         Mediaitem.Mode = M_GET_VIDEO_LINKS
         Mediaitem.Image = Image
-        Mediaitem.Url = sys.argv[0] + "?url=" + urllib.quote_plus(Url) + "&mode=" + str(Mediaitem.Mode) + "&name=" + urllib.quote_plus(Title)
+        Mediaitem.Url = sys.argv[0] + "?url=" + urllib.quote_plus(Url) + "&mode=" + str(Mediaitem.Mode) + "&name=" + urllib.quote_plus(Title.encode('utf8'))
         Mediaitem.ListItem.setInfo('video', { 'Title': Title, 'Plot': Plot, 'Mpaa': Mpaa,
                                              'Genre': Genre, 'Year': Year})
         Mediaitem.ListItem.setThumbnailImage(Mediaitem.Image)
@@ -518,7 +542,7 @@ def BrowseDirectory(mode):
         Mode = mode
         Title = name
         Thumb = thumbnailImage
-        Mediaitem.Url = sys.argv[0] + "?url=" + urllib.quote_plus(Url) + "&mode=" + str(Mode) + "&name=" + urllib.quote_plus(Title)
+        Mediaitem.Url = sys.argv[0] + "?url=" + urllib.quote_plus(Url) + "&mode=" + str(Mode) + "&name=" + urllib.quote_plus(Title.encode('utf8'))
         Mediaitem.ListItem.setThumbnailImage(Thumb)
         Mediaitem.ListItem.setLabel(Title)
         Mediaitem.Isfolder = True
@@ -536,7 +560,7 @@ def BrowseDirectory(mode):
         Mode = mode
         Title = name
         Thumb = thumbnailImage
-        Mediaitem.Url = sys.argv[0] + "?url=" + urllib.quote_plus(Url) + "&mode=" + str(Mode) + "&name=" + urllib.quote_plus(Title)
+        Mediaitem.Url = sys.argv[0] + "?url=" + urllib.quote_plus(Url) + "&mode=" + str(Mode) + "&name=" + urllib.quote_plus(Title.encode('utf8'))
         Mediaitem.ListItem.setThumbnailImage(Thumb)
         Mediaitem.ListItem.setLabel(Title)
         Mediaitem.Isfolder = True
@@ -554,9 +578,12 @@ def BrowseDirectory(mode):
 ## Try to get a list of playable items and play it.
 ###########################################################
 def Playlist(URL):
+    print "CRACKLE Playlist "+URL
     # set content type so library shows more views and info
     xbmcplugin.setContent(int(sys.argv[1]), 'movies')
     MediaItems = []
+    countryInfo = CountryCode()
+    sub_url = ''
     #URL = API_URL + CHURL % url
     data = cache.cacheFunction(getURL, URL)
     #data = load_local_json('chdet3.json')
@@ -581,20 +608,25 @@ def Playlist(URL):
             HackUrl = item['Thumbnail_Wide']
             #print HackUrl
             #Path = re.compile('http://.+?\/(.+?)_.+?').findall(HackUrl)[0]
-            Path = re.compile('http:\\/\\/.+?\/(.+?)_[a-zA-Z0-9]+').findall(HackUrl)[0]
-            Url = BASE_MEDIA_URL % Path
-            print Url
+            Path = path_pattern.findall(HackUrl)[0]
+            Url = BASE_MEDIA_URL % (countryInfo['lang'],Path)
             Image = item['Thumbnail_Large208x156']
             Genre = item['Genre']
             Plot = item['Description']
             Mpaa = item['Rating']
             Duration = item['Duration']
+            Subtitle = item['ClosedCaptionFiles']
             Mediaitem = MediaItem()
             Mediaitem.Mode = M_PLAY
             Mediaitem.Image = Image
-            Mediaitem.Url = sys.argv[0] + "?url=" + urllib.quote_plus(Url) + "&mode=" + str(Mediaitem.Mode) + "&name=" + urllib.quote_plus(Title)
-            Mediaitem.ListItem.setInfo('video', { 'Title': Title, 'Plot': Plot, 'Mpaa': Mpaa,
-                                             'Genre': Genre, 'Duration': Duration})
+            Mediaitem.Url = sys.argv[0] + "?url=" + urllib.quote_plus(Url) + "&mode=" + str(Mediaitem.Mode) + "&name=" + urllib.quote_plus(Title.encode('utf8'))
+
+            if Subtitle:
+                #print "\n############### FOUND SUBTITLES \n############## "+Subtitle[0]['Path']
+                sub_url = Subtitle[0]['Path']
+                Mediaitem.Url = Mediaitem.Url + "&sub="+urllib.quote_plus(sub_url)
+
+            Mediaitem.ListItem.setInfo('video', { 'Title': Title, 'Plot': Plot, 'Mpaa': Mpaa,'Genre': Genre, 'Duration': Duration})
             Mediaitem.ListItem.setThumbnailImage(Mediaitem.Image)
             Mediaitem.ListItem.setLabel(Title)
             #Mediaitem.ListItem.setProperty('IsPlayable', 'true')
@@ -603,16 +635,19 @@ def Playlist(URL):
     
     if count < 1:
         return
-    addDir(MediaItems)
-    # End of Directory
-    xbmcplugin.endOfDirectory(int(sys.argv[1]))
-    ## Set Default View Mode. This might break with different skins. But who cares?
-    SetViewMode()
     
     if count == 1:
-        Play(Url, Mediaitem.ListItem)
+        Play(Url, Mediaitem.ListItem, sub_url)
+    else:
+        addDir(MediaItems)
+        # End of Directory
+        xbmcplugin.endOfDirectory(int(sys.argv[1]))
+        ## Set Default View Mode. This might break with different skins. But who cares?
+        SetViewMode()
+
         
 def VideoDetails(URL):
+    print "CRACKLE VideoDetails "+URL
     ###########################################################
     ## Mode == M_SINGLE_VIDEO
     ## Try to get a playable item and play it.
@@ -620,6 +655,8 @@ def VideoDetails(URL):
     # set content type so library shows more views and info
     xbmcplugin.setContent(int(sys.argv[1]), 'movies')
     MediaItems = []
+    countryInfo = CountryCode()
+    sub_url = ''
     data = cache.cacheFunction(getURL, URL)
     #data = load_local_json('chdet3.json')
     mjson = json.loads(data['html'])
@@ -627,23 +664,29 @@ def VideoDetails(URL):
     HackUrl = mjson['Thumbnail_Wide']
     #print HackUrl
     #Path = re.compile('http://.+?\/(.+?)_.+?').findall(HackUrl)[0]
-    Path = re.compile('http:\\/\\/.+?\/(.+?)_[a-zA-Z0-9]+').findall(HackUrl)[0]
-    Url = BASE_MEDIA_URL % Path
+    Path = path_pattern.findall(HackUrl)[0]
+    Url = BASE_MEDIA_URL % (countryInfo['lang'], Path)
     #print Url
     Image = mjson['Thumbnail_Large208x156']
     Genre = mjson['Genre']
     Plot = mjson['Description']
     Mpaa = mjson['Rating']
     Duration = mjson['Duration']
+    Subtitle = mjson['ClosedCaptionFiles']
+
     Mediaitem = MediaItem()
     Mediaitem.Mode = M_PLAY
     Mediaitem.Image = Image
-    Mediaitem.Url = sys.argv[0] + "?url=" + urllib.quote_plus(Url) + "&mode=" + str(Mediaitem.Mode) + "&name=" + urllib.quote_plus(Title)
-    Mediaitem.ListItem.setInfo('video', { 'Title': Title, 'Plot': Plot, 'Mpaa': Mpaa,
-                                             'Genre': Genre, 'Duration': Duration})
+    Mediaitem.Url = sys.argv[0] + "?url=" + urllib.quote_plus(Url) + "&mode=" + str(Mediaitem.Mode) + "&name=" + urllib.quote_plus(Title.encode('utf8'))
+    Mediaitem.ListItem.setInfo('video', { 'Title': Title, 'Plot': Plot, 'Mpaa': Mpaa, 'Genre': Genre, 'Duration': Duration})
     Mediaitem.ListItem.setThumbnailImage(Mediaitem.Image)
     Mediaitem.ListItem.setLabel(Title)
     #Mediaitem.ListItem.setProperty('IsPlayable', 'true')
+
+    if Subtitle:
+         sub_url = Subtitle[0]['Path']
+         Mediaitem.Url = Mediaitem.Url + "&sub="+urllib.quote_plus(sub_url)
+
     MediaItems.append(Mediaitem)
     #addDir(Title, Url, M_PLAY, Image, Genre, '', Plot)
     addDir(MediaItems)
@@ -652,10 +695,10 @@ def VideoDetails(URL):
     ## Set Default View Mode. This might break with different skins. But who cares?
     SetViewMode()
     
-    Play(Url, Mediaitem.ListItem)
+    Play(Url, Mediaitem.ListItem, sub_url)
 
 
-def Play(url, litem=False):
+def Play(url, litem=False, subtitles_url='', name=''):
     if url is not None and url != '':
         #try:
             #url2 = url.replace('480', '360')
@@ -667,14 +710,22 @@ def Play(url, litem=False):
                 #url = url.replace('480', '360')
             playList = xbmc.PlayList(xbmc.PLAYLIST_VIDEO)
             playList.clear()
-            if litem:
-                playList.add(Url, litem)
-                #playList.add(url2, litem)
-            else:
-                playList.add(Url)
-                #playList.add(url2)
+            if not litem:
+                litem=xbmcgui.ListItem(name)
+                litem.setInfo( type="video",  infoLabels = {'title' : name })
+            litem.setProperty('mimetype','video/mp4') # improve loading time
+            playList.add(Url,litem)
             xbmcPlayer = xbmc.Player()
             xbmcPlayer.play(playList)
+
+            if subtitles_url:
+                while not xbmcPlayer.isPlaying():
+                    xbmc.sleep(100) #wait until video is being played
+                try:
+                    xbmcPlayer.setSubtitles(SC.saveSubtitle(getURL(subtitles_url)['html'])) #set subtitle 
+                except Exception as inst: 
+                    print "ERROR loading subtitles "+str(subtitles_url), inst
+
             playList.clear()
             #vid = xbmcgui.ListItem(path=url)
             #xbmc.Player(xbmc.PLAYER_CORE_DVDPLAYER).play(url, vid)
@@ -713,6 +764,7 @@ def SEARCH(url):
         # set content type so library shows more views and info
         xbmcplugin.setContent(int(sys.argv[1]), 'movies')
         MediaItems = []
+        countryInfo = CountryCode()
     
         if url is None or url == '':
             keyb = xbmc.Keyboard('', 'Search Crackle')
@@ -724,7 +776,7 @@ def SEARCH(url):
                 return
             #search = search.replace(" ", "+")
             encSrc = urllib.quote(search)
-            url = API_URL + SEARCHURL % (encSrc, CountryCode()['CCode'])
+            url = (API_URL + SEARCHURL) % (countryInfo['api'], encSrc, countryInfo['CCode'])
         
         data = cache.cacheFunction(getURL, url)    
         #data = load_local_json('search2.json')
@@ -744,9 +796,8 @@ def SEARCH(url):
             Mediaitem = MediaItem()
             Mediaitem.Mode = M_GET_VIDEO_LINKS
             Mediaitem.Image = Image
-            Mediaitem.Url = sys.argv[0] + "?url=" + urllib.quote_plus(Url) + "&mode=" + str(Mediaitem.Mode) + "&name=" + urllib.quote_plus(Title)
-            Mediaitem.ListItem.setInfo('video', { 'Title': Title, 'Plot': Plot, 'Mpaa': Mpaa,
-                                             'Genre': Genre})
+            Mediaitem.Url = sys.argv[0] + "?url=" + urllib.quote_plus(Url) + "&mode=" + str(Mediaitem.Mode) + "&name=" + urllib.quote_plus(Title.encode('utf8'))
+            Mediaitem.ListItem.setInfo('video', { 'Title': Title, 'Plot': Plot, 'Mpaa': Mpaa, 'Genre': Genre})
             Mediaitem.ListItem.setThumbnailImage(Mediaitem.Image)
             Mediaitem.ListItem.setLabel(Title)
             Mediaitem.Isfolder = True
@@ -789,6 +840,8 @@ url = None
 name = None
 mode = None
 titles = None
+subtitles = None
+
 try:
         url = urllib.unquote_plus(params["url"])
 except:
@@ -805,6 +858,10 @@ try:
         titles = urllib.unquote_plus(params["titles"])
 except:
         pass
+try:
+        sub = urllib.unquote_plus(params["sub"])
+except:
+        sub = ''
 
 xbmc.log("Mode: " + str(mode))
 #print "URL: " + str(url)
@@ -830,4 +887,5 @@ elif mode == M_GET_VIDEO_LINKS:
 elif mode == M_SINGLE_VIDEO:
     VideoDetails(url)    
 elif mode == M_PLAY:
-    Play(url)
+    print "CRACKLE "+url
+    Play(url,subtitles_url=sub,name=name)
